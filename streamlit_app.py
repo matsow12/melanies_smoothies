@@ -13,41 +13,46 @@ st.write(
 name_on_order = st.text_input("Name on Smoothie:")
 st.write("The name on your smoothie will be: ", name_on_order)
 
+# NAWIGACJA: Dodano SEARCH_ON do zapytania SQL, aby kod niżej działał
 cnx = st.connection("snowflake")
 session = cnx.session()
-my_dataframe = session.sql("SELECT FRUIT_ID, FRUIT_NAME FROM smoothies.public.fruit_options")
+my_dataframe = session.sql("SELECT FRUIT_ID, FRUIT_NAME, SEARCH_ON FROM smoothies.public.fruit_options")
 
-# 1. Konwersja Snowpark DataFrame do Pandas DataFrame i wyciągnięcie kolumny z tekstową nazwą owocu
-# Upewnij się, że wielkość liter w nazwie kolumny zgadza się z bazą (zwykle wielkie litery 'FRUIT_NAME')
+# Konwersja do Pandas DataFrame
 pd_df = my_dataframe.to_pandas()
+# Wyciągamy listę tekstową nazw owoców
 fruit_list = pd_df['FRUIT_NAME'].tolist()
 
-# 2. Przekazanie gotowej listy tekstowej do komponentu multicelect
+# POPRAWKA 1: Przekazujemy fruit_list zamiast my_dataframe, aby widzieć nazwy, a nie ID
 ingredients_list = st.multiselect(
-    'Choose up to 5 ingredients:'
-    ,my_dataframe
-    ,max_selections=5
-    
-    )
+    'Choose up to 5 ingredients:',
+    fruit_list,
+    max_selections=5
+)
 
 # Wyświetlenie wyniku, jeśli użytkownik coś wybrał
 if ingredients_list:
+    ingredients_string = ''
+    
+    # POPRAWKA 2: Ujednolicono nazwę zmiennej na fruit_chosen
+    for fruit_chosen in ingredients_list:
+        ingredients_string += fruit_chosen + ' '
 
-    ingredients_string =''
-    for fruit_chose in ingredients_list:
-        ingredients_string  += fruit_chose + ' '
-
-        search_on=pd_df.loc[pd_df['FRUIT_NAME'] == fruit_chosen, 'SEARCH_ON'].iloc[0]
-        st.write('The search value for ', fruit_chosen,' is ', search_on, '.')
+        # Pobieramy wartość do API z kolumny SEARCH_ON (zgodnie z Badge 3!)
+        search_on = pd_df.loc[pd_df['FRUIT_NAME'] == fruit_chosen, 'SEARCH_ON'].iloc[0]
+        st.write('The search value for ', fruit_chosen, ' is ', search_on, '.')
       
         st.subheader(fruit_chosen + ' Nutrition Information')
-        smoothiefroot_response = requests.get("https://my.smoothiefroot.com/api/fruit/"+ fruit_chosen)  
-        sf_df = st.dataframe(data=smoothiefroot_response.json(),use_container_width=True)
+        # POPRAWKA 3: Do API przekazujemy zmienną search_on zamiast fruit_chosen!
+        smoothiefroot_response = requests.get("https://my.smoothiefroot.com/api/fruit/" + search_on)  
+        
+        if smoothiefroot_response.status_code == 200:
+            sf_df = st.dataframe(data=smoothiefroot_response.json(), use_container_width=True)
+        else:
+            st.warning(f"Could not find nutrition info for {fruit_chosen}")
 
-   
     my_insert_stmt = """ insert into smoothies.public.orders(ingredients,name_on_order)
                     values ('""" + ingredients_string + """','"""+name_on_order+"""')"""
-   
 
     time_to_insert = st.button('Submit Order')
 
